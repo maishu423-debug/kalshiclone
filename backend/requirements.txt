@@ -1,0 +1,7 @@
+Django==6.0.6
+cryptography==49.0.0
+gunicorn
+numpy==2.4.6
+pandas==3.0.3
+requests==2.34.2
+websockets==16.0
