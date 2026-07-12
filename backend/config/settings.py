@@ -16,7 +16,7 @@ SECRET_KEY = "dev-only-kalshi-clone-secret-key"
 # Django's full HTML traceback (which is what tripped the cron monitor's
 # response-size limit on /ping/).
 DEBUG = not bool(os.environ.get("RENDER"))
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", ".onrender.com", ".vercel.app"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1","secondclone-67mh.onrender.com" ,".onrender.com, ".vercel.app"]
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
