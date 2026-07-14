@@ -518,21 +518,18 @@ def _do_refresh():
 def _record_forecast_snapshot(results: dict):
     """Persist a history row: current temp + ensemble forecast at this refresh cycle."""
     try:
-        from django.db import connection
-
         from .algorithm import get_ensemble_forecast
-        from .models import ForecastSnapshot
         from .price_tracker import get_temp_snapshot
+        from .sheets_history import append_snapshot
 
         ensemble = get_ensemble_forecast(results)
         current_f = get_temp_snapshot().get("current_f")
         if not ensemble or current_f is None:
             return
-        ForecastSnapshot.objects.create(
+        append_snapshot(
             current_temp_f=current_f,
             model_forecast_f=ensemble.get("mean"),
         )
-        connection.close()
     except Exception as exc:
         print(f"[forecast] failed to record history snapshot ({exc})")
 

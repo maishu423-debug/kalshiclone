@@ -9,9 +9,9 @@ from django.views.decorators.http import require_GET, require_POST
 from .algorithm import get_full_state
 from .client import KalshiClientError, get_miami_temperature_payload
 from .forecast import trigger_refresh, MODELS
-from .models import ForecastSnapshot
 from .price_tracker import record_price, nws_round_temp_f
 from .paper import PaperTradeError, get_state, parse_order, place_order, reset_account
+from .sheets_history import get_recent_snapshots
 from .stream import stream_events
 from .temp_monitor import refresh_temp_now
 
@@ -307,17 +307,7 @@ def algorithm_trade(request):
 def forecast_history(request):
     """Recent forecast-cycle snapshots: current temp vs. model forecast at each timestamp."""
     limit = int(request.GET.get("limit", 100))
-    rows = ForecastSnapshot.objects.all()[:limit]
-    return JsonResponse({
-        "history": [
-            {
-                "timestamp":        row.created_at.isoformat(),
-                "current_temp_f":   row.current_temp_f,
-                "model_forecast_f": row.model_forecast_f,
-            }
-            for row in rows
-        ]
-    })
+    return JsonResponse({"history": get_recent_snapshots(limit)})
 
 
 @csrf_exempt

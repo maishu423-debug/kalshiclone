@@ -34,13 +34,3 @@ class PaperTrade(models.Model):
     cash_delta_cents = models.IntegerField()
     realized_pl_cents = models.IntegerField(null=True, blank=True)  # set on sells only
     created_at = models.DateTimeField(auto_now_add=True)
-
-
-class ForecastSnapshot(models.Model):
-    """One row per automatic 15-minute forecast cycle: current temp vs. model forecast at that time."""
-    created_at = models.DateTimeField(auto_now_add=True)
-    current_temp_f = models.FloatField(null=True, blank=True)
-    model_forecast_f = models.FloatField(null=True, blank=True)
-
-    class Meta:
-        ordering = ["-created_at"]
