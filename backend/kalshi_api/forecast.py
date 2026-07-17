@@ -1,8 +1,9 @@
 """
 Background forecast runner.
 
-Spawns all 6 ML model scripts as subprocesses in parallel every 15 minutes,
-caches their JSON output in memory, and exposes helpers for the algorithm.
+Spawns all 6 ML model scripts as subprocesses in parallel every 15 minutes
+(every 5 minutes from 2pm Miami time onward), caches their JSON output in
+memory, and exposes helpers for the algorithm.
 """
 import json
 import os
@@ -40,8 +41,21 @@ MODELS = [
     {"name": "var_3h",         "script": "variable_combined_3hour.py"},
 ]
 
-REFRESH_INTERVAL = 900  # seconds (15 minutes)
+REFRESH_INTERVAL = 900        # seconds (15 minutes) — before 2pm Miami time
+REFRESH_INTERVAL_AFTERNOON = 300  # seconds (5 minutes) — from 2pm Miami time onward
+AFTERNOON_SWITCH_HOUR = 14    # 2pm, Miami (America/New_York) local time
 STARTUP_DELAY = 30      # let lightweight /ping/ respond before CPU-heavy models start
+
+
+def _current_refresh_interval() -> int:
+    """900s (15 min) normally, 300s (5 min) from 2pm Miami time onward."""
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    now_miami = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
+    if now_miami.hour >= AFTERNOON_SWITCH_HOUR:
+        return REFRESH_INTERVAL_AFTERNOON
+    return REFRESH_INTERVAL
 
 _lock = threading.Lock()
 _started = False
@@ -548,15 +562,16 @@ def _background_loop():
             _loop["last_cycle_started_at"] = datetime.utcnow().isoformat()
             _loop["next_run_at"] = None
             _loop["last_error"] = None
+        interval = _current_refresh_interval()
         try:
             _do_refresh()
         except Exception as exc:
             error = str(exc)
             with _lock:
                 _loop["last_error"] = error
-            print(f"[forecast] background refresh crashed ({exc}); will retry in {REFRESH_INTERVAL}s")
+            print(f"[forecast] background refresh crashed ({exc}); will retry in {interval}s")
         elapsed = time.time() - started_at
-        sleep_for = max(0, REFRESH_INTERVAL - elapsed)
+        sleep_for = max(0, interval - elapsed)
         with _lock:
             _loop["last_cycle_finished_at"] = datetime.utcnow().isoformat()
             _loop["next_run_at"] = datetime.utcfromtimestamp(
