@@ -114,8 +114,7 @@ type TradeLeg = {
 type Recommendation = {
   status:    "ready" | "waiting";
   reason:    string;
-  yes_trade: TradeLeg | null;
-  no_trade:  TradeLeg | null;
+  no_trades: TradeLeg[];
 };
 
 type ForecastHistoryRow = {
@@ -1016,44 +1015,27 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="algo-rec-grid">
-                  {/* YES trade — highest probability bracket */}
-                  {rec.yes_trade && (
-                    <div className="algo-rec algo-rec--buy">
-                      <div className="rec-action">BUY YES</div>
-                      <div className="rec-label">{rec.yes_trade.label}</div>
-                      <div className="rec-details">
-                        <div className="rec-row">
-                          <span>Ask price</span>
-                          <strong>{cents(rec.yes_trade.price_cents)}</strong>
-                        </div>
-                        <div className="rec-row">
-                          <span>Daily-high prob</span>
-                          <strong className="dir-ok">{(rec.yes_trade.model_prob * 100).toFixed(1)}%</strong>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {/* NO trade — lowest probability bracket */}
-                  {rec.no_trade && (
-                    <div className="algo-rec algo-rec--no">
+                  {/* NO ladder — current bracket (if close enough to cap) + every bracket below it */}
+                  {(rec.no_trades ?? []).map((trade) => (
+                    <div className="algo-rec algo-rec--no" key={trade.ticker}>
                       <div className="rec-action">BUY NO</div>
-                      <div className="rec-label">{rec.no_trade.label}</div>
+                      <div className="rec-label">{trade.label}</div>
                       <div className="rec-details">
                         <div className="rec-row">
                           <span>Ask price</span>
-                          <strong>{cents(rec.no_trade.price_cents)}</strong>
+                          <strong>{cents(trade.price_cents)}</strong>
                         </div>
                         <div className="rec-row">
                           <span>YES prob (low)</span>
-                          <strong className="ev-neg">{(rec.no_trade.model_prob * 100).toFixed(1)}%</strong>
+                          <strong className="ev-neg">{(trade.model_prob * 100).toFixed(1)}%</strong>
                         </div>
                         <div className="rec-row">
                           <span>NO wins if</span>
-                          <strong>{((1 - rec.no_trade.model_prob) * 100).toFixed(1)}%</strong>
+                          <strong>{((1 - trade.model_prob) * 100).toFixed(1)}%</strong>
                         </div>
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
               {rec.reason && <p className="rec-reason rec-reason--sub">{rec.reason}</p>}

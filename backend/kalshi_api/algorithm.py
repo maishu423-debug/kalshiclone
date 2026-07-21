@@ -3,8 +3,11 @@ Model-driven trading algorithm.
 
 ENSEMBLE:     Pair same-horizon models (A1+V1, A2+V2, A3+V3) with
               weighted averages, then combine into a daily-high PDF.
-EACH CYCLE:   Buy YES on the highest-probability bracket.
-              Buy NO  on the lowest-probability bracket (different bracket).
+EACH CYCLE:   Find the live bracket containing the ensemble mean forecast
+              ("current bracket"). Buy NO on every live bracket below it
+              ("previous brackets"). Also buy NO on the current bracket
+              itself if the forecast is within NO_LADDER_CAP_MARGIN_F of
+              its cap (i.e. likely to round past this bracket entirely).
 NO AUTO-SELL: Contracts are held until manually closed.
 """
 from collections import defaultdict
@@ -16,6 +19,11 @@ from .price_tracker import get_all_velocities, get_temp_snapshot, nws_round_temp
 
 MIAMI_UTC_OFFSET  = -4
 CUTOFF_LOCAL_HOUR = 16
+
+# If the ensemble-mean forecast is within this many degrees of the current
+# bracket's cap, the forecast is considered likely to round past the cap —
+# so the current bracket also gets a NO trade, not just the brackets below it.
+NO_LADDER_CAP_MARGIN_F = 0.1
 
 # Weighted combination within each horizon pair.
 # AccuWeather and Variable-combined models are paired by forecast horizon.
@@ -199,20 +207,30 @@ def analyze_markets(markets: list) -> list:
 
 # ── Recommendation ────────────────────────────────────────────────────────────
 
+def _bracket_contains(bracket: dict, value: float) -> bool:
+    floor = bracket.get("floor")
+    cap   = bracket.get("cap")
+    return (floor is None or value >= float(floor)) and (cap is None or value < float(cap))
+
+
 def get_recommendation(analyses: list, results=None) -> dict:
     """
-    Returns the two trades to execute each cycle:
-      yes_trade  — buy YES on highest-probability bracket
-      no_trade   — buy NO  on lowest-probability bracket (must be a different bracket)
+    NO-ladder strategy, run each cycle:
+      1. Locate the live bracket containing the ensemble-mean forecast
+         ("current bracket").
+      2. Buy NO on every live bracket below it ("previous brackets").
+      3. Also buy NO on the current bracket itself if the forecast is
+         within NO_LADDER_CAP_MARGIN_F of its cap — close enough to the
+         top that it's likely to round past this bracket too.
 
-    No auto-sell logic.  Contracts are held until manually closed.
+    No YES trades. No auto-sell logic — contracts are held until manually
+    closed.
 
     Return shape:
       {
         "status":    "ready" | "waiting",
         "reason":    str,
-        "yes_trade": {ticker, label, side, price_cents, model_prob} | None,
-        "no_trade":  {ticker, label, side, price_cents, model_prob} | None,
+        "no_trades": [{ticker, label, side, price_cents, model_prob}, ...],
       }
     """
     if results is None:
@@ -233,43 +251,67 @@ def get_recommendation(analyses: list, results=None) -> dict:
         )
 
     if not live:
-        return {"status": "waiting", "reason": "All brackets eliminated by daily high.", "yes_trade": None, "no_trade": None}
+        return {"status": "waiting", "reason": "All brackets eliminated by daily high.", "no_trades": []}
 
     if not has_models:
-        return {"status": "waiting", "reason": "Waiting for model forecasts to load.", "yes_trade": None, "no_trade": None}
+        return {"status": "waiting", "reason": "Waiting for model forecasts to load.", "no_trades": []}
 
-    sorted_live = sorted(live, key=lambda a: a.get("model_prob") or 0.0, reverse=True)
-    best  = sorted_live[0]
-    worst = sorted_live[-1]
+    mean_high = sum(t * p for t, p in high_pdf.items())
 
-    yes_trade = {
-        "ticker":      best["ticker"],
-        "label":       best["label"],
-        "side":        "yes",
-        "price_cents": best.get("yes_ask_cents"),
-        "model_prob":  best.get("model_prob") or 0.0,
-    }
+    sorted_live = sorted(
+        live,
+        key=lambda b: float(b["floor"]) if b.get("floor") is not None else float("-inf"),
+    )
 
-    # Only add NO trade if worst bracket is different from best
-    no_trade = None
-    if len(sorted_live) >= 2 and worst["ticker"] != best["ticker"]:
-        no_trade = {
-            "ticker":      worst["ticker"],
-            "label":       worst["label"],
-            "side":        "no",
-            "price_cents": worst.get("no_ask_cents"),
-            "model_prob":  worst.get("model_prob") or 0.0,  # YES probability (low = good for NO)
+    current_idx = next(
+        (i for i, b in enumerate(sorted_live) if _bracket_contains(b, mean_high)),
+        None,
+    )
+    if current_idx is None:
+        return {
+            "status":    "waiting",
+            "reason":    f"Forecast {mean_high:.1f}°F falls outside all live brackets.",
+            "no_trades": [],
         }
 
-    reason = f"YES: {best['label']} ({(best.get('model_prob') or 0)*100:.1f}%)"
-    if no_trade:
-        reason += f"  |  NO: {worst['label']} ({(worst.get('model_prob') or 0)*100:.1f}% YES prob)"
+    current_bracket   = sorted_live[current_idx]
+    previous_brackets = sorted_live[:current_idx]
+
+    cap             = current_bracket.get("cap")
+    include_current = cap is not None and mean_high >= (float(cap) - NO_LADDER_CAP_MARGIN_F)
+
+    ladder = list(previous_brackets)
+    if include_current:
+        ladder.append(current_bracket)
+
+    if not ladder:
+        return {
+            "status":    "waiting",
+            "reason":    f"Forecast {mean_high:.1f}°F sits inside the lowest live bracket ({current_bracket['label']}); nothing to fade.",
+            "no_trades": [],
+        }
+
+    no_trades = [
+        {
+            "ticker":      b["ticker"],
+            "label":       b["label"],
+            "side":        "no",
+            "price_cents": b.get("no_ask_cents"),
+            "model_prob":  b.get("model_prob") or 0.0,
+        }
+        for b in ladder
+    ]
+
+    reason = (
+        f"Forecast {mean_high:.1f}°F → {current_bracket['label']} "
+        f"({'incl.' if include_current else 'excl.'} current bracket) "
+        f"— NO x{len(no_trades)}: " + ", ".join(t["label"] for t in no_trades)
+    )
 
     return {
         "status":    "ready",
         "reason":    reason,
-        "yes_trade": yes_trade,
-        "no_trade":  no_trade,
+        "no_trades": no_trades,
     }
 
 

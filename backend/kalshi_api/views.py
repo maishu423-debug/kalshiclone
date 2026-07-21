@@ -243,7 +243,8 @@ def algorithm_state(request):
 @require_POST
 def algorithm_trade(request):
     """
-    Execute one trading cycle: buy YES on best bracket + buy NO on worst bracket.
+    Execute one trading cycle: buy NO on the current bracket (if the forecast
+    is close enough to its cap) and every live bracket below it.
 
     Body (JSON, optional):
       { "dollars_cents": 1000, "enabled_models": ["accuweather_1h", ...] }
@@ -293,8 +294,8 @@ def algorithm_trade(request):
         except PaperTradeError as exc:
             trades.append({"action": side_label, "error": str(exc)})
 
-    _place("buy YES", rec.get("yes_trade"))
-    _place("buy NO",  rec.get("no_trade"))
+    for leg in rec.get("no_trades", []):
+        _place("buy NO", leg)
 
     return JsonResponse({
         "trades":         trades,
