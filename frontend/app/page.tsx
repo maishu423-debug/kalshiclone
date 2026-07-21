@@ -123,6 +123,18 @@ type ForecastHistoryRow = {
   model_forecast_f:  number | null;
 };
 
+type TradeHistoryRow = {
+  timestamp:          string;
+  market_ticker:      string | null;
+  market_label:       string | null;
+  action:             "buy" | "sell" | null;
+  side:               "yes" | "no" | null;
+  price_cents:        number | null;
+  contracts:          number | null;
+  cash_delta_cents:   number | null;
+  realized_pl_cents:  number | null;
+};
+
 type AlgorithmState = {
   forecast: {
     models:      Record<string, ModelResult>;
@@ -393,6 +405,7 @@ export default function Home() {
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [isDistSidebarOpen, setIsDistSidebarOpen] = useState(false);
   const [forecastHistory, setForecastHistory]   = useState<ForecastHistoryRow[]>([]);
+  const [tradeHistory, setTradeHistory]         = useState<TradeHistoryRow[]>([]);
   const lastHistoryForecastRunAtRef = useRef<string | null>(null);
   const autoTradeRef = useRef(autoTradeEnabled);
   autoTradeRef.current = autoTradeEnabled;
@@ -602,6 +615,22 @@ export default function Home() {
     loadForecastHistory();
   }, [loadForecastHistory]);
 
+  // ── Trade history — reload after mount and after any trade is placed ──
+  const loadTradeHistory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/kalshi/algorithm/trade-history?limit=100", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setTradeHistory((data.history ?? []) as TradeHistoryRow[]);
+    } catch {
+      // silent — history panel just stays stale until the next successful poll
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTradeHistory();
+  }, [loadTradeHistory]);
+
   useEffect(() => {
     const lastRunAt = algoState?.forecast?.last_run_at ?? null;
     if (!lastRunAt || lastHistoryForecastRunAtRef.current === lastRunAt) return;
@@ -703,6 +732,7 @@ export default function Home() {
       setOrderMessage(
         `${tradeMode === "buy" ? "Bought" : "Sold"} ${data.trade.contracts.toFixed(4)} ${contractSide.toUpperCase()} at ${data.trade.price_cents}c`
       );
+      loadTradeHistory();
     } catch (err) {
       setOrderMessage(err instanceof Error ? err.message : "Order failed.");
     } finally {
@@ -754,6 +784,7 @@ export default function Home() {
       }
 
       loadAlgoState();
+      loadTradeHistory();
     } catch (err) {
       setAlgoMessage(err instanceof Error ? err.message : "Algo trade failed.");
     } finally {
@@ -1125,6 +1156,48 @@ export default function Home() {
                     <td>{new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</td>
                     <td>{row.current_temp_f != null ? `${row.current_temp_f.toFixed(1)}°F` : "—"}</td>
                     <td>{row.model_forecast_f != null ? `${row.model_forecast_f.toFixed(1)}°F` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </aside>
+
+      {/* ── Trade history: every paper trade placed, persisted to Google Sheets ── */}
+      <aside className="forecast-history-panel">
+        <h3 className="algo-section-title">
+          Trade History
+          <span className="algo-hint-inline"> — every buy/sell, saved to Sheets</span>
+        </h3>
+        {tradeHistory.length === 0 ? (
+          <p className="algo-hint">No trades yet — history lands here right after the next order.</p>
+        ) : (
+          <div className="forecast-history-scroll">
+            <table className="forecast-history-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Market</th>
+                  <th>Action</th>
+                  <th>Price</th>
+                  <th>Contracts</th>
+                  <th>Cash</th>
+                  <th>P/L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tradeHistory.map((row, i) => (
+                  <tr key={`${row.timestamp}-${i}`}>
+                    <td>{row.timestamp ? new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                    <td>{row.market_label || row.market_ticker || "—"}</td>
+                    <td>{row.action && row.side ? `${row.action} ${row.side.toUpperCase()}` : "—"}</td>
+                    <td>{cents(row.price_cents)}</td>
+                    <td>{row.contracts != null ? row.contracts.toFixed(2) : "—"}</td>
+                    <td>{row.cash_delta_cents != null ? dollars(row.cash_delta_cents) : "—"}</td>
+                    <td className={row.realized_pl_cents != null ? (row.realized_pl_cents >= 0 ? "dir-ok" : "ev-neg") : ""}>
+                      {row.realized_pl_cents != null ? dollars(row.realized_pl_cents) : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

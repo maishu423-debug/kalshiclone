@@ -192,7 +192,28 @@ def place_order(order):
         realized_pl_cents=realized_pl if order["action"] == "sell" else None,
     )
 
+    _record_trade_history(trade)
+
     return {"trade": serialize_trade(trade), "state": get_state()}
+
+
+def _record_trade_history(trade):
+    """Persist a trade-history row to Google Sheets. Never breaks a trade."""
+    try:
+        from .sheets_history import append_trade
+
+        append_trade(
+            market_ticker=trade.market_ticker,
+            market_label=trade.market_label,
+            action=trade.action,
+            side=trade.side,
+            price_cents=trade.price_cents,
+            contracts=decimal_to_float(trade.contracts),
+            cash_delta_cents=trade.cash_delta_cents,
+            realized_pl_cents=trade.realized_pl_cents,
+        )
+    except Exception as exc:
+        print(f"[paper] failed to record trade history ({exc})")
 
 
 @transaction.atomic

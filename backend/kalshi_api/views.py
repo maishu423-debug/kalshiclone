@@ -11,7 +11,7 @@ from .client import KalshiClientError, get_miami_temperature_payload
 from .forecast import trigger_refresh, MODELS
 from .price_tracker import record_price, nws_round_temp_f
 from .paper import PaperTradeError, get_state, parse_order, place_order, reset_account
-from .sheets_history import get_recent_snapshots
+from .sheets_history import get_recent_snapshots, get_recent_trades
 from .stream import stream_events
 from .temp_monitor import refresh_temp_now
 
@@ -309,6 +309,13 @@ def forecast_history(request):
     """Recent forecast-cycle snapshots: current temp vs. model forecast at each timestamp."""
     limit = int(request.GET.get("limit", 100))
     return JsonResponse({"history": get_recent_snapshots(limit)})
+
+
+@require_GET
+def trade_history(request):
+    """Recent paper trades, persisted to Google Sheets (survives Render restarts)."""
+    limit = int(request.GET.get("limit", 100))
+    return JsonResponse({"history": get_recent_trades(limit)})
 
 
 @csrf_exempt

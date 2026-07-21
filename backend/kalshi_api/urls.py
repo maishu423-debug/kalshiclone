@@ -30,4 +30,6 @@ urlpatterns = [
     path("algorithm/refresh-temp/",   views.algorithm_refresh_temp),
     path("algorithm/forecast-history",  views.forecast_history),
     path("algorithm/forecast-history/", views.forecast_history),
+    path("algorithm/trade-history",     views.trade_history),
+    path("algorithm/trade-history/",    views.trade_history),
 ]
