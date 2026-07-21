@@ -587,7 +587,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [loadAlgoState]);
 
-  // ── Forecast history — reload when a model refresh cycle completes (15 min, or 5 min after 2pm ET) ──
+  // ── Forecast history — reload when a 15-min model cycle completes ──
   const loadForecastHistory = useCallback(async () => {
     try {
       const res = await fetch("/api/kalshi/algorithm/forecast-history?limit=100", { cache: "no-store" });
@@ -1119,11 +1119,11 @@ export default function Home() {
         )}
       </section>
 
-      {/* ── Forecast history: current temp vs. model forecast every 15 min (5 min after 2pm Miami time) ── */}
+      {/* ── Forecast history: current temp vs. model forecast every 15 min ── */}
       <aside className="forecast-history-panel">
         <h3 className="algo-section-title">
           Forecast History
-          <span className="algo-hint-inline"> — new row every 15 min (5 min after 2pm ET)</span>
+          <span className="algo-hint-inline"> — new row every 15 min</span>
         </h3>
         {forecastHistory.length === 0 ? (
           <p className="algo-hint">No history yet — the first row lands after the next automatic forecast cycle.</p>
